@@ -1362,4 +1362,63 @@ async function exportData(){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 
+  a.download = suggested;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function importData(){
+  if(window.pywebview && window.pywebview.api){
+    try{
+      const raw = await window.pywebview.api.import_data();
+      if(!raw) return;
+      applyImportedRaw(raw);
+    }catch(err){
+      alert('Import fehlgeschlagen: Datei ist keine gültige Backup-Datei.');
+    }
+    return;
+  }
+  document.getElementById('fileImportInput').click();
+}
+
+function handleFileImportChange(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => applyImportedRaw(ev.target.result);
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+function applyImportedRaw(raw){
+  try{
+    const parsed = JSON.parse(raw);
+    if(!parsed.categories || !parsed.items) throw new Error('Ungültiges Format');
+    if(confirm('Import ersetzt alle aktuellen Daten. Fortfahren?')){
+      state = parsed;
+      if(!state.mangaMaxVolume) state.mangaMaxVolume = DEFAULT_MANGA_MAX_VOLUME;
+      if(!state.ownedBinders) state.ownedBinders = {};
+      if(!state.collections || !state.collections.length){
+        state.collections = DEFAULT_COLLECTIONS.map(c=>({...c}));
+      }
+      const fallbackCollectionId = state.collections[0].id;
+      state.categories.forEach(cat=>{ if(!cat.collectionId) cat.collectionId = fallbackCollectionId; });
+      saveData();
+      setView('dashboard');
+    }
+  }catch(err){
+    alert('Import fehlgeschlagen: Datei ist keine gültige Backup-Datei.');
+  }
+}
+
+/* ---------- Utils ---------- */
+function formatEuro(n){
+  return Number(n||0).toLocaleString('de-DE', { style:'currency', currency:'EUR' });
+}
+
+function escapeHtml(str){
+  return String(str??'').replace(/[&<>"']/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+</script>
+</body>
+</html>
