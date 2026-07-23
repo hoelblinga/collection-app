@@ -721,6 +721,7 @@ let currentFilter = { search: '', status: 'all' };
 let mangaSubView = 'grid';
 let cardsSubView = 'table';
 let tcgCardsData = null;
+let tcgCardsFetchedAt = null;
 let tcgCardsLoading = false;
 let tcgCardsError = null;
 let cardDbSearch = '';
@@ -1098,21 +1099,33 @@ async function loadTcgCards(){
   tcgCardsLoading = true;
   tcgCardsError = null;
   try{
-    let parsed;
+    let parsed = null;
     if(window.pywebview && window.pywebview.api){
-      const raw = await window.pywebview.api.get_tcg_cards();
-      parsed = JSON.parse(raw);
+      try{
+        const raw = await window.pywebview.api.get_tcg_cards();
+        parsed = JSON.parse(raw);
+      }catch(err){ /* fällt unten auf statischen Snapshot zurück */ }
     } else {
-      const res = await fetch('/api/tcgcards');
-      if(!res.ok) throw new Error('Server nicht erreichbar');
-      parsed = await res.json();
+      try{
+        const res = await fetch('/api/tcgcards');
+        if(res.ok) parsed = await res.json();
+      }catch(err){ /* kein lokaler Server erreichbar, z.B. auf GitLab Pages */ }
     }
-    if(!parsed.cards || !parsed.cards.length){
-      throw new Error(parsed.error || 'Keine Kartendaten erhalten');
+    if(!parsed || !parsed.cards || !parsed.cards.length){
+      // Statischer Snapshot als Fallback (funktioniert auch ohne Server/Backend,
+      // z.B. auf GitLab Pages) - Datei liegt neben index.html, Stand siehe fetchedAt.
+      try{
+        const res2 = await fetch('tcg_cards_data.json');
+        if(res2.ok) parsed = await res2.json();
+      }catch(err){ /* auch kein Snapshot vorhanden */ }
+    }
+    if(!parsed || !parsed.cards || !parsed.cards.length){
+      throw new Error((parsed && parsed.error) || 'Keine Kartendaten erhalten');
     }
     tcgCardsData = parsed.cards;
+    tcgCardsFetchedAt = parsed.fetched_at || parsed.fetchedAt || null;
   }catch(e){
-    tcgCardsError = 'Kartendatenbank ist nur im Desktop-Programm oder über den lokalen Server (WLAN) verfügbar – direkt über die veröffentlichte Web-Adresse kann die Karten-API nicht abgerufen werden.';
+    tcgCardsError = 'Kartendatenbank ist gerade nicht verfügbar – weder Desktop-Programm/lokaler Server noch ein gespeicherter Karten-Snapshot wurden gefunden.';
     console.warn('Kartendatenbank-Fehler:', e);
   }finally{
     tcgCardsLoading = false;
@@ -1225,11 +1238,16 @@ function renderCardDatabase(){
     `;
   }).join('');
 
+  const fetchedNote = tcgCardsFetchedAt
+    ? `<div style="color:var(--text-dim);font-size:12px;margin:-8px 0 12px;">Stand: ${escapeHtml(new Date(tcgCardsFetchedAt*1000).toLocaleDateString('de-DE'))}</div>`
+    : '';
+
   main.innerHTML = `
     ${subtabsHtml}
     <div class="toolbar">
       <input type="text" placeholder="Karte oder Set suchen ..." value="${escapeHtml(cardDbSearch)}" oninput="onCardDbSearch(this.value)">
     </div>
+    ${fetchedNote}
     ${groupsHtml || '<div class="empty">Keine Karten gefunden.</div>'}
   `;
 }
