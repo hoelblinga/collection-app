@@ -1,4 +1,4 @@
-const CACHE_NAME = 'collection-app-v1';
+const CACHE_NAME = 'collection-app-v2';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', event => {
@@ -15,6 +15,10 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
+// Network-first: liefert immer die aktuelle Version, wenn online, und
+// aktualisiert dabei den Cache. Nur offline greift der zuletzt gecachte
+// Stand. Verhindert, dass nach einem neuen Deploy dauerhaft eine alte
+// gecachte Version ausgeliefert wird.
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   // API-Aufrufe (Sammlungsdaten) nie aus dem Cache beantworten, immer live vom Server.
@@ -22,6 +26,12 @@ self.addEventListener('fetch', event => {
     return;
   }
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+    fetch(event.request)
+      .then(res => {
+        const resClone = res.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, resClone)).catch(()=>{});
+        return res;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
