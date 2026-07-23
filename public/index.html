@@ -564,6 +564,10 @@ const MANGA_SAGAS = [
   { no: 11, name: 'Aktuelle Saga (noch ohne offiziellen Sammelschuber)', start: 105, end: null, ongoing: true },
 ];
 const DEFAULT_MANGA_MAX_VOLUME = 114;
+// Richtpreis pro Manga-Band (Taschenbuch, Carlsen-Verlag), Stand Juli 2026.
+// Wird nur als Schätzwert verwendet, wenn ein Band ohne eigenen Preis eingetragen wurde
+// (z.B. über die Bände-Übersicht/Sammelschuber hinzugefügt). Bei Preiserhöhungen hier anpassen.
+const MANGA_DEFAULT_PRICE = 7.80;
 
 // Dezente, an das jeweilige Sammelschuber-Motiv angelehnte Farbthemen (keine
 // urheberrechtlich geschützten Cover-Abbildungen, nur Farbe + generisches Icon).
@@ -649,6 +653,14 @@ function saveData(){
 function mangaSagasResolved(){
   const max = state.mangaMaxVolume || DEFAULT_MANGA_MAX_VOLUME;
   return MANGA_SAGAS.map(s => ({ ...s, end: s.end == null ? max : s.end }));
+}
+
+// Preis eines Eintrags für die Wertberechnung: eigener Preis, falls hinterlegt,
+// sonst für Manga-Bände der aktuelle Richtpreis (MANGA_DEFAULT_PRICE), sonst 0.
+function estimatedPrice(item){
+  if(item.price) return Number(item.price);
+  if(item.categoryId === 'manga') return MANGA_DEFAULT_PRICE;
+  return 0;
 }
 
 let state = defaultState();
@@ -795,8 +807,8 @@ function renderValueView(){
     const items = state.items.filter(i=>i.categoryId===cat.id);
     const ownedItems = items.filter(i=>i.status==='owned');
     const wishItems = items.filter(i=>i.status==='wish');
-    const ownedValue = ownedItems.reduce((s,i)=>s + Number(i.price||0) * Number(i.quantity||0), 0);
-    const wishValue = wishItems.reduce((s,i)=>s + Number(i.price||0) * Number(i.quantity||0), 0);
+    const ownedValue = ownedItems.reduce((s,i)=>s + estimatedPrice(i) * Number(i.quantity||0), 0);
+    const wishValue = wishItems.reduce((s,i)=>s + estimatedPrice(i) * Number(i.quantity||0), 0);
     const ownedQty = ownedItems.reduce((s,i)=>s + Number(i.quantity||0), 0);
     grandOwnedValue += ownedValue;
     grandWishValue += wishValue;
@@ -813,15 +825,20 @@ function renderValueView(){
   const rowsHtml = state.categories.map(cat=>{
     const items = state.items.filter(i=>i.categoryId===cat.id && i.status==='owned');
     const qty = items.reduce((s,i)=>s + Number(i.quantity||0), 0);
-    const val = items.reduce((s,i)=>s + Number(i.price||0) * Number(i.quantity||0), 0);
+    const val = items.reduce((s,i)=>s + estimatedPrice(i) * Number(i.quantity||0), 0);
     const missingPrices = items.filter(i=>!i.price).length;
+    const missingLabel = missingPrices > 0
+      ? (cat.id === 'manga'
+          ? `<span style="color:var(--text-dim);font-size:12px;">${missingPrices} geschätzt à ${formatEuro(MANGA_DEFAULT_PRICE)}</span>`
+          : `<span style="color:var(--text-dim);font-size:12px;">${missingPrices} ohne Preis</span>`)
+      : '—';
     return `
       <tr>
         <td>${categoryIcon(cat.id)} ${escapeHtml(cat.label)}</td>
         <td>${items.length}</td>
         <td>${qty}</td>
         <td>${formatEuro(val)}</td>
-        <td>${missingPrices > 0 ? `<span style="color:var(--text-dim);font-size:12px;">${missingPrices} ohne Preis</span>` : '—'}</td>
+        <td>${missingLabel}</td>
       </tr>
     `;
   }).join('');
@@ -848,7 +865,7 @@ function renderValueView(){
       <tbody>${rowsHtml}</tbody>
     </table>
     <div class="empty" style="text-align:left;">
-      <p style="color:var(--text-dim);font-size:13px;">Preise werden pro Eintrag im Bearbeiten-Dialog jeder Kategorie gepflegt (Feld „Preis pro Stück"). Einträge ohne hinterlegten Preis zählen mit 0 € in die Summe.</p>
+      <p style="color:var(--text-dim);font-size:13px;">Preise werden pro Eintrag im Bearbeiten-Dialog jeder Kategorie gepflegt (Feld „Preis pro Stück"). Manga-Bände ohne eigenen Preis (z.B. über die Bände-Übersicht hinzugefügt) werden automatisch mit dem aktuellen Richtpreis von ${formatEuro(MANGA_DEFAULT_PRICE)} pro Band geschätzt (Stand Juli 2026). Einträge anderer Kategorien ohne hinterlegten Preis zählen weiterhin mit 0 € in die Summe.</p>
     </div>
   `;
 }
