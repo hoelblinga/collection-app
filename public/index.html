@@ -369,6 +369,56 @@
     font-size:14px;
   }
 
+  /* ---------- TCG Kartendatenbank ---------- */
+  .tcg-set-group{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:12px;
+    margin-bottom:12px;
+    overflow:hidden;
+  }
+  .tcg-set-header{
+    padding:14px 16px;
+    cursor:pointer;
+    font-weight:700;
+    font-size:14px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+  }
+  .tcg-set-header:hover{background:var(--panel-2);}
+  .tcg-set-header .count{
+    font-size:12px;
+    font-weight:500;
+    color:var(--text-dim);
+    background:rgba(255,255,255,.08);
+    padding:2px 9px;
+    border-radius:10px;
+    flex-shrink:0;
+  }
+  .tcg-card-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+    gap:12px;
+    padding:0 16px 16px;
+  }
+  .tcg-card{
+    background:var(--panel-2);
+    border:1px solid var(--border);
+    border-radius:10px;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+  .tcg-card img{width:100%;display:block;aspect-ratio:2/3;object-fit:cover;background:#0c0e14;}
+  .tcg-card-info{padding:8px 10px;display:flex;flex-direction:column;gap:4px;}
+  .tcg-card-name{font-size:12px;font-weight:700;line-height:1.25;}
+  .tcg-card-meta{font-size:11px;color:var(--text-dim);}
+  .tcg-card-price{font-size:12px;font-weight:700;color:var(--gold);}
+  .tcg-card-info button{width:100%;margin-top:4px;padding:6px 8px;font-size:11px;}
+  .tcg-card-info button:disabled{opacity:.5;cursor:default;}
+
   /* ---------- Mobile-Optimierung ---------- */
   @media (max-width: 680px){
     main{padding:14px 12px;}
@@ -385,6 +435,7 @@
     .binder-progress{width:100%;text-align:left;}
     .modal{padding:16px;max-width:100%;}
     .volume-grid{grid-template-columns:repeat(auto-fill,minmax(38px,1fr));}
+    .tcg-card-grid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;}
   }
 </style>
 </head>
@@ -668,6 +719,12 @@ let currentView = 'dashboard';
 let editingItemId = null;
 let currentFilter = { search: '', status: 'all' };
 let mangaSubView = 'grid';
+let cardsSubView = 'table';
+let tcgCardsData = null;
+let tcgCardsLoading = false;
+let tcgCardsError = null;
+let cardDbSearch = '';
+let expandedSets = new Set();
 
 let appInitialized = false;
 async function initApp(){
@@ -940,6 +997,10 @@ function renderCategoryView(catId){
     renderMangaVolumeGrid();
     return;
   }
+  if(catId === 'cards' && cardsSubView === 'database'){
+    renderCardDatabase();
+    return;
+  }
 
   let items = state.items.filter(i=>i.categoryId===catId);
   if(currentFilter.search){
@@ -987,7 +1048,12 @@ function renderCategoryView(catId){
       <button class="btn-secondary ${mangaSubView==='grid'?'active':''}" onclick="setMangaSubView('grid')">📖 Bände-Übersicht</button>
       <button class="btn-secondary ${mangaSubView==='table'?'active':''}" onclick="setMangaSubView('table')">📋 Tabelle</button>
     </div>
-  ` : '';
+  ` : (catId === 'cards' ? `
+    <div class="subtabs">
+      <button class="btn-secondary ${cardsSubView==='table'?'active':''}" onclick="setCardsSubView('table')">📋 Meine Sammlung</button>
+      <button class="btn-secondary ${cardsSubView==='database'?'active':''}" onclick="setCardsSubView('database')">🗂️ Kartendatenbank</button>
+    </div>
+  ` : '');
 
   main.innerHTML = `
     ${subtabsHtml}
@@ -1015,6 +1081,156 @@ function renderCategoryView(catId){
       </thead>
       <tbody>${rows}</tbody>
     </table>
+  `;
+}
+
+/* ---------- TCG Kartendatenbank (optcgapi.com) ---------- */
+function setCardsSubView(v){ cardsSubView = v; renderCategoryView('cards'); }
+
+function normalizePrice(p){
+  if(p === null || p === undefined || p === '') return null;
+  const n = parseFloat(String(p).replace(',', '.'));
+  return isNaN(n) ? null : n;
+}
+
+async function loadTcgCards(){
+  if(tcgCardsData || tcgCardsLoading) return;
+  tcgCardsLoading = true;
+  tcgCardsError = null;
+  try{
+    let parsed;
+    if(window.pywebview && window.pywebview.api){
+      const raw = await window.pywebview.api.get_tcg_cards();
+      parsed = JSON.parse(raw);
+    } else {
+      const res = await fetch('/api/tcgcards');
+      if(!res.ok) throw new Error('Server nicht erreichbar');
+      parsed = await res.json();
+    }
+    if(!parsed.cards || !parsed.cards.length){
+      throw new Error(parsed.error || 'Keine Kartendaten erhalten');
+    }
+    tcgCardsData = parsed.cards;
+  }catch(e){
+    tcgCardsError = 'Kartendatenbank ist nur im Desktop-Programm oder über den lokalen Server (WLAN) verfügbar – direkt über die veröffentlichte Web-Adresse kann die Karten-API nicht abgerufen werden.';
+    console.warn('Kartendatenbank-Fehler:', e);
+  }finally{
+    tcgCardsLoading = false;
+    if(currentView === 'cards') renderCategoryView('cards');
+  }
+}
+
+function groupCardsBySet(cardList){
+  const bySet = {};
+  cardList.forEach(c=>{
+    const key = c.set_id || c.set_name || '—';
+    if(!bySet[key]) bySet[key] = { set_id: c.set_id, set_name: c.set_name, cards: [] };
+    bySet[key].cards.push(c);
+  });
+  return Object.values(bySet)
+    .sort((a,b)=> String(a.set_id).localeCompare(String(b.set_id)))
+    .map(group=>{
+      group.cards.sort((a,b)=> String(a.card_set_id).localeCompare(String(b.card_set_id)));
+      return group;
+    });
+}
+
+function toggleSetExpanded(setId){
+  if(expandedSets.has(setId)) expandedSets.delete(setId);
+  else expandedSets.add(setId);
+  renderCategoryView('cards');
+}
+
+function onCardDbSearch(v){ cardDbSearch = v; renderCategoryView('cards'); }
+
+function addCardToCollection(cardSetId){
+  const card = (tcgCardsData||[]).find(c=>c.card_set_id===cardSetId);
+  if(!card) return;
+  const already = state.items.some(i=>i.categoryId==='cards' && i.extra && i.extra.number===card.card_set_id);
+  if(already){ alert('Diese Karte ist bereits in deiner Sammlung.'); return; }
+  state.items.push({
+    id: 'it_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    categoryId: 'cards',
+    title: card.card_name,
+    quantity: 1,
+    price: normalizePrice(card.market_price) || 0,
+    status: 'owned',
+    notes: '',
+    extra: { set: card.set_name || '', number: card.card_set_id || '', rarity: card.rarity || '', language: 'EN', condition: 'NM (Near Mint)' }
+  });
+  saveData();
+  renderCategoryView('cards');
+}
+
+function renderCardDatabase(){
+  const main = document.getElementById('mainContent');
+  const subtabsHtml = `
+    <div class="subtabs">
+      <button class="btn-secondary ${cardsSubView==='table'?'active':''}" onclick="setCardsSubView('table')">📋 Meine Sammlung</button>
+      <button class="btn-secondary ${cardsSubView==='database'?'active':''}" onclick="setCardsSubView('database')">🗂️ Kartendatenbank</button>
+    </div>
+  `;
+
+  if(tcgCardsLoading){
+    main.innerHTML = `${subtabsHtml}<div class="empty">Kartendatenbank wird geladen ...</div>`;
+    return;
+  }
+  if(tcgCardsError){
+    main.innerHTML = `${subtabsHtml}<div class="empty">${escapeHtml(tcgCardsError)}</div>`;
+    return;
+  }
+  if(!tcgCardsData){
+    loadTcgCards();
+    main.innerHTML = `${subtabsHtml}<div class="empty">Kartendatenbank wird geladen ...</div>`;
+    return;
+  }
+
+  let cardList = tcgCardsData;
+  if(cardDbSearch){
+    const q = cardDbSearch.toLowerCase();
+    cardList = cardList.filter(c =>
+      (c.card_name||'').toLowerCase().includes(q) ||
+      (c.card_set_id||'').toLowerCase().includes(q) ||
+      (c.set_name||'').toLowerCase().includes(q)
+    );
+  }
+
+  const groups = groupCardsBySet(cardList);
+
+  const groupsHtml = groups.map(g=>{
+    const isOpen = expandedSets.has(g.set_id) || !!cardDbSearch;
+    const cardsHtml = isOpen ? g.cards.map(c=>{
+      const price = normalizePrice(c.market_price);
+      const owned = state.items.some(i=>i.categoryId==='cards' && i.extra && i.extra.number===c.card_set_id);
+      return `
+        <div class="tcg-card">
+          <img src="${escapeHtml(c.card_image||'')}" alt="${escapeHtml(c.card_name||'')}" loading="lazy" onerror="this.style.visibility='hidden'">
+          <div class="tcg-card-info">
+            <div class="tcg-card-name">${escapeHtml(c.card_name||'')}</div>
+            <div class="tcg-card-meta">${escapeHtml(c.card_set_id||'')} · ${escapeHtml(c.rarity||'—')}</div>
+            <div class="tcg-card-price">${price!=null ? formatEuro(price) : '—'}</div>
+            <button class="btn-secondary" ${owned?'disabled':''} onclick="addCardToCollection('${c.card_set_id}')">${owned ? '✓ In Sammlung' : '+ Hinzufügen'}</button>
+          </div>
+        </div>
+      `;
+    }).join('') : '';
+    return `
+      <div class="tcg-set-group">
+        <div class="tcg-set-header" onclick="toggleSetExpanded('${g.set_id}')">
+          <span>${isOpen ? '▾' : '▸'} ${escapeHtml(g.set_name||g.set_id||'—')}</span>
+          <span class="count">${g.cards.length}</span>
+        </div>
+        ${isOpen ? `<div class="tcg-card-grid">${cardsHtml}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  main.innerHTML = `
+    ${subtabsHtml}
+    <div class="toolbar">
+      <input type="text" placeholder="Karte oder Set suchen ..." value="${escapeHtml(cardDbSearch)}" oninput="onCardDbSearch(this.value)">
+    </div>
+    ${groupsHtml || '<div class="empty">Keine Karten gefunden.</div>'}
   `;
 }
 
