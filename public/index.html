@@ -1156,10 +1156,17 @@ function toggleSetExpanded(setId){
 
 function onCardDbSearch(v){ cardDbSearch = v; renderCategoryView('cards'); }
 
-function addCardToCollection(cardSetId){
-  const card = (tcgCardsData||[]).find(c=>c.card_set_id===cardSetId);
+function addCardToCollection(cardImageId){
+  // card_set_id (z.B. "OP01-001") ist bei mehreren Druckvarianten derselben Karte
+  // (z.B. Normal + Parallel/Special) IDENTISCH - card_image_id ("OP01-001" vs.
+  // "OP01-001_p1") ist die einzige eindeutige Kennung pro Variante. Deshalb wird
+  // hier gezielt anhand card_image_id gesucht, sonst würde immer nur die erste
+  // Variante gefunden und beim Anklicken einer anderen Variante fälschlich
+  // mitgezählt/hinzugefügt werden.
+  const card = (tcgCardsData||[]).find(c=>(c.card_image_id||c.card_set_id)===cardImageId);
   if(!card) return;
-  const already = state.items.some(i=>i.categoryId==='cards' && i.extra && i.extra.number===card.card_set_id);
+  const key = card.card_image_id || card.card_set_id;
+  const already = state.items.some(i=>i.categoryId==='cards' && i.extra && i.extra.cardImageId===key);
   if(already){ alert('Diese Karte ist bereits in deiner Sammlung.'); return; }
   state.items.push({
     id: 'it_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
@@ -1169,7 +1176,7 @@ function addCardToCollection(cardSetId){
     price: normalizePrice(card.market_price) || 0,
     status: 'owned',
     notes: '',
-    extra: { set: card.set_name || '', number: card.card_set_id || '', rarity: card.rarity || '', language: 'EN', condition: 'NM (Near Mint)' }
+    extra: { set: card.set_name || '', number: card.card_set_id || '', rarity: card.rarity || '', language: 'EN', condition: 'NM (Near Mint)', cardImageId: key }
   });
   saveData();
   renderCategoryView('cards');
@@ -1214,7 +1221,8 @@ function renderCardDatabase(){
     const isOpen = expandedSets.has(g.set_id) || !!cardDbSearch;
     const cardsHtml = isOpen ? g.cards.map(c=>{
       const price = normalizePrice(c.market_price);
-      const owned = state.items.some(i=>i.categoryId==='cards' && i.extra && i.extra.number===c.card_set_id);
+      const cardKey = c.card_image_id || c.card_set_id;
+      const owned = state.items.some(i=>i.categoryId==='cards' && i.extra && i.extra.cardImageId===cardKey);
       return `
         <div class="tcg-card">
           <img src="${escapeHtml(c.card_image||'')}" alt="${escapeHtml(c.card_name||'')}" loading="lazy" onerror="this.style.visibility='hidden'">
@@ -1222,7 +1230,7 @@ function renderCardDatabase(){
             <div class="tcg-card-name">${escapeHtml(c.card_name||'')}</div>
             <div class="tcg-card-meta">${escapeHtml(c.card_set_id||'')} · ${escapeHtml(c.rarity||'—')}</div>
             <div class="tcg-card-price">${price!=null ? formatEuro(price) : '—'}</div>
-            <button class="btn-secondary" ${owned?'disabled':''} onclick="addCardToCollection('${c.card_set_id}')">${owned ? '✓ In Sammlung' : '+ Hinzufügen'}</button>
+            <button class="btn-secondary" ${owned?'disabled':''} onclick="addCardToCollection('${escapeHtml(cardKey)}')">${owned ? '✓ In Sammlung' : '+ Hinzufügen'}</button>
           </div>
         </div>
       `;
