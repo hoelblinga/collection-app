@@ -1138,6 +1138,18 @@ async function loadTcgCards(){
   }
 }
 
+// Manche neueren Sets (z.B. Crossover-Boxen) haben zusammengesetzte set_id-Werte
+// wie "OP14-EB04" statt "OP-14" - ein reiner String-Vergleich würde diese dann vor
+// "OP-16" o.ä. einsortieren. Deshalb wird hier gezielt nach Buchstaben-Präfix (OP,
+// EB, ST, PRB, ...) und der ersten enthaltenen Zahl sortiert, nicht nach dem
+// rohen Text.
+function setSortKey(setId){
+  const s = String(setId||'');
+  const prefixMatch = s.match(/^[A-Za-z]+/);
+  const numMatch = s.match(/\d+/);
+  return { prefix: prefixMatch ? prefixMatch[0] : s, num: numMatch ? parseInt(numMatch[0],10) : 0 };
+}
+
 function groupCardsBySet(cardList){
   const bySet = {};
   cardList.forEach(c=>{
@@ -1146,7 +1158,11 @@ function groupCardsBySet(cardList){
     bySet[key].cards.push(c);
   });
   return Object.values(bySet)
-    .sort((a,b)=> String(a.set_id).localeCompare(String(b.set_id)))
+    .sort((a,b)=>{
+      const ka = setSortKey(a.set_id), kb = setSortKey(b.set_id);
+      if(ka.prefix !== kb.prefix) return ka.prefix.localeCompare(kb.prefix);
+      return ka.num - kb.num;
+    })
     .map(group=>{
       group.cards.sort((a,b)=> String(a.card_set_id).localeCompare(String(b.card_set_id)));
       return group;
