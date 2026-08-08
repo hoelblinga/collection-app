@@ -550,8 +550,13 @@
   <option value="OP07 - 500 Years in the Future">
   <option value="OP08 - Two Legends">
   <option value="OP09 - Emperors in the New World">
-  <option value="OP10">
-  <option value="OP11">
+  <option value="OP10 - Royal Blood">
+  <option value="OP11 - A Fist of Divine Speed">
+  <option value="OP12 - Legacy of the Master">
+  <option value="OP13 - Carrying On His Will">
+  <option value="OP14 - The Azure Sea's Seven">
+  <option value="OP15 - Adventure on Kami's Island">
+  <option value="OP16 - The Time of Battle">
   <option value="EB01 - Memorial Collection">
   <option value="EB02 - Anime 25th Collection">
   <option value="PRB01 - Premium Booster">
@@ -1238,7 +1243,7 @@ function renderCardDatabase(){
     return `
       <div class="tcg-set-group">
         <div class="tcg-set-header" onclick="toggleSetExpanded('${g.set_id}')">
-          <span>${isOpen ? '▾' : '▸'} ${escapeHtml(g.set_name||g.set_id||'—')}</span>
+          <span>${isOpen ? '▾' : '▸'} ${escapeHtml(g.set_id||'')} ${g.set_id&&g.set_name?'–':''} ${escapeHtml(g.set_name||(g.set_id?'':'—'))}</span>
           <span class="count">${g.cards.length}</span>
         </div>
         ${isOpen ? `<div class="tcg-card-grid">${cardsHtml}</div>` : ''}
