@@ -1,0 +1,5 @@
+desktop/venv/
+desktop/collection-backup.json
+desktop/tcg_cards_cache.json
+__pycache__/
+*.pyc
